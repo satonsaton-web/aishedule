@@ -1,0 +1,5 @@
+{
+  "name": "Smart Shift Roster AI",
+  "description": "チャットでのシフト作成、視覚的なグリッド編集、役割ベースのアクセス制御を備えた、AI搭載のオンライン勤務表アプリケーションです。",
+  "requestFramePermissions": []
+}
