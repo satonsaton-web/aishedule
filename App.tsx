@@ -268,12 +268,13 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
              <AlertCircle size={16} className="text-gray-400" />
-             <span className="text-xs font-bold text-gray-600">今月の必要公休数:</span>
+             <span className="text-xs font-bold text-gray-600">今月の必要休数:</span>
              <input 
                type="number" min={0} max={31}
                value={requiredHolidayCount}
                onChange={(e) => setRequiredHolidayCount(parseInt(e.target.value) || 0)}
-               className="w-12 text-center text-sm border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none"
+               disabled={user.role !== 'admin'}
+               className="w-12 text-center text-sm border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 outline-none disabled:bg-gray-100 disabled:text-gray-500"
              />
              <span className="text-xs text-gray-500">日</span>
           </div>
