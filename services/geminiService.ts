@@ -1,157 +1,152 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { processRosterRequest, AgentResponse } from '../services/geminiService';
-import { ChatMessage, Employee, ShiftType, ScheduleData } from '../types';
-import { Send, Loader2, Bot, User as UserIcon, X } from 'lucide-react';
 
-interface ChatInterfaceProps {
-  employees: Employee[];
-  shiftTypes: ShiftType[];
-  schedule: ScheduleData;
-  onUpdateSchedule: (updates: NonNullable<AgentResponse['updates']>) => void;
-  year: number;
-  month: number;
-  isOpen: boolean;
-  onClose: () => void;
-}
+import { GoogleGenAI } from "@google/genai";
+import { Employee, ShiftType, ScheduleData } from '../types';
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({
-  employees,
-  shiftTypes,
-  schedule,
-  onUpdateSchedule,
-  year,
-  month,
-  isOpen,
-  onClose
-}) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { id: '1', role: 'model', text: 'こんにちは！勤務表アシスタントです。「毎週金曜日は佐藤さんをカミングにする」のように指示してください。', timestamp: Date.now() }
-  ]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isOpen]);
-
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', text: input, timestamp: Date.now() };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setIsLoading(true);
-
-    try {
-      const response = await processRosterRequest(
-        userMsg.text,
-        employees,
-        shiftTypes,
-        schedule,
-        year,
-        month
-      );
-
-      if (response.type === 'UPDATE' && response.updates) {
-        onUpdateSchedule(response.updates);
-        setMessages(prev => [...prev, {
-          id: (Date.now() + 1).toString(),
-          role: 'model',
-          text: `✅ ${response.message}`,
-          timestamp: Date.now()
-        }]);
-      } else {
-        setMessages(prev => [...prev, {
-          id: (Date.now() + 1).toString(),
-          role: 'model',
-          text: response.message,
-          timestamp: Date.now()
-        }]);
-      }
-    } catch (error) {
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: 'model',
-        text: '申し訳ありません。エラーが発生しました。',
-        timestamp: Date.now()
-      }]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-2xl border-l border-gray-200 flex flex-col z-50 transition-transform duration-300">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-200 bg-indigo-600 text-white flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Bot size={20} />
-          <h2 className="font-bold">AI アシスタント</h2>
-        </div>
-        <button onClick={onClose} className="hover:bg-indigo-700 p-1 rounded">
-          <X size={20} />
-        </button>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50" ref={scrollRef}>
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`flex gap-2 max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${msg.role === 'user' ? 'bg-indigo-100 text-indigo-600' : 'bg-green-100 text-green-600'}`}>
-                {msg.role === 'user' ? <UserIcon size={16} /> : <Bot size={16} />}
-              </div>
-              <div className={`p-3 rounded-lg text-sm shadow-sm ${
-                msg.role === 'user' 
-                  ? 'bg-indigo-600 text-white rounded-tr-none' 
-                  : 'bg-white text-gray-800 border border-gray-200 rounded-tl-none'
-              }`}>
-                {msg.text}
-              </div>
-            </div>
-          </div>
-        ))}
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-white border border-gray-200 p-3 rounded-lg rounded-tl-none shadow-sm flex items-center gap-2">
-              <Loader2 className="animate-spin text-indigo-600" size={16} />
-              <span className="text-xs text-gray-500">考え中...</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Input */}
-      <div className="p-4 bg-white border-t border-gray-200">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
-            placeholder="ここに指示を入力..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            disabled={isLoading}
-          />
-          <button
-            onClick={handleSend}
-            disabled={isLoading || !input.trim()}
-            className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 disabled:bg-gray-300 transition-colors"
-          >
-            <Send size={18} />
-          </button>
-        </div>
-        <p className="text-xs text-gray-400 mt-2 text-center">
-          例: 「赤木さんを毎週金曜朝Nにして」「今月の休みの数を数えて」
-        </p>
-      </div>
-    </div>
-  );
+// APIキーを安全に取得する関数
+const getApiKey = () => {
+  // 1. 標準的なプロセス環境変数 (Node.js/Next.js等)
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+  // 2. Vite環境変数 (import.meta.env)
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
+    // @ts-ignore
+    return import.meta.env.VITE_API_KEY;
+  }
+  return '';
 };
 
-export default ChatInterface;
+export interface AgentResponse {
+  type: 'UPDATE' | 'ANSWER' | 'ERROR';
+  message: string;
+  updates?: {
+    date: string;
+    employeeId: string;
+    shiftIds: string[];
+    note?: string;
+  }[];
+}
+
+export const processRosterRequest = async (
+  userPrompt: string,
+  employees: Employee[],
+  shiftTypes: ShiftType[],
+  currentSchedule: ScheduleData,
+  year: number,
+  month: number
+): Promise<AgentResponse> => {
+  const apiKey = getApiKey();
+
+  // API Key Check
+  if (!apiKey) {
+    console.error("API Key is missing. Checked process.env.API_KEY and VITE_API_KEY.");
+    return {
+      type: 'ERROR',
+      message: "APIキーが設定されていません。Vercelの環境変数名を 'VITE_API_KEY' に変更して再デプロイしてください。"
+    };
+  }
+
+  try {
+    // クライアントをリクエストの都度生成（キーの確実な適用）
+    const ai = new GoogleGenAI({ apiKey: apiKey });
+    const model = 'gemini-2.5-flash';
+    
+    // Construct context
+    const employeeList = employees.map(e => `${e.name} (ID: ${e.id})`).join(', ');
+    const shiftList = shiftTypes.map(s => `${s.name} (ID: ${s.id})`).join(', ');
+    const scheduleContext = JSON.stringify(currentSchedule);
+
+    const systemInstruction = `
+      You are an intelligent Roster Assistant. You manage a shift schedule for ${year}-${month + 1}.
+      
+      **CRITICAL RULE: All output text in the 'message' field MUST be in Japanese.**
+      
+      **Context Data:**
+      - Employees: ${employeeList}
+      - Valid Shift Types: ${shiftList}
+      - Current Year/Month: ${year}-${month + 1}
+      - **Current Schedule Data**: ${scheduleContext}
+      
+      **Your Goal:**
+      Analyze the user's request.
+      
+      1. **UPDATE Requests** (e.g., "Set Tanaka to Morning shift on Fridays", "Add Meeting for Suzuki today"):
+         - Identify specific dates in ${year}-${month + 1}.
+         - Identify the Employee ID.
+         - Identify Shift IDs.
+         - Return a JSON with type="UPDATE".
+         - The "message" field must be a polite Japanese summary of what you did.
+      
+      2. **QUESTION Requests** (e.g., "Who is working today?", "Who has no schedule on Tuesday?", "Count holidays for Abe"):
+         - Analyze the "Current Schedule Data" provided above.
+         - If checking for "no schedule" or "free", look for entries where shiftIds is empty or the date key is missing for that employee.
+         - If checking for specific shifts (e.g., "Who is on Night Shift"), check if the shiftId is present.
+         - Return a JSON with type="ANSWER" and a text message containing the answer.
+         - The "message" field must be in Japanese.
+      
+      **JSON Response Format:**
+      
+      For Updates:
+      {
+        "type": "UPDATE",
+        "message": "変更内容の要約（日本語）",
+        "updates": [
+          { 
+            "date": "YYYY-MM-DD", 
+            "employeeId": "emp1", 
+            "shiftIds": ["morning_n", "meeting"], 
+            "note": "optional text" 
+          }
+        ]
+      }
+      
+      For Answers:
+      {
+        "type": "ANSWER",
+        "message": "スケジュールデータに基づく回答（日本語）"
+      }
+
+      **Rules:**
+      - Date format: YYYY-MM-DD.
+      - Only generate dates for ${month + 1} (Month index ${month}).
+      - Be strict about IDs.
+      - **ALWAYS RESPOND IN JAPANESE.**
+    `;
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: userPrompt,
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+      }
+    });
+
+    const responseText = response.text;
+    if (!responseText) {
+        throw new Error("No response from AI");
+    }
+
+    const parsedData = JSON.parse(responseText) as AgentResponse;
+    return parsedData;
+
+  } catch (error: any) {
+    console.error("Gemini API Error:", error);
+    // 生のエラーメッセージを取得して表示
+    const detailedMsg = error.message || JSON.stringify(error);
+    
+    // APIキー関連のエラーの場合、親切なメッセージを返す
+    if (detailedMsg.includes('API key') || detailedMsg.includes('400')) {
+         return {
+            type: 'ERROR',
+            message: `APIキーエラーが発生しました。\nVercelの設定で変数名を「VITE_API_KEY」に変更し、再デプロイしてください。\n詳細: ${detailedMsg}`
+        };
+    }
+
+    return {
+      type: 'ERROR',
+      message: `AI処理エラー: ${detailedMsg}`
+    };
+  }
+};

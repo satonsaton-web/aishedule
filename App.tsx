@@ -19,8 +19,8 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
 
   // --- State with LocalStorage Persistence ---
+  // ... (localStorage logic remains the same) ...
 
-  // 1. Schedule Data
   const [schedule, setSchedule] = useState<ScheduleData>(() => {
     const saved = localStorage.getItem('roster_schedule');
     return saved ? JSON.parse(saved) : INITIAL_SCHEDULE;
@@ -29,7 +29,6 @@ const App: React.FC = () => {
     localStorage.setItem('roster_schedule', JSON.stringify(schedule));
   }, [schedule]);
 
-  // 2. Shift Types
   const [shiftTypes, setShiftTypes] = useState<ShiftType[]>(() => {
     const saved = localStorage.getItem('roster_shift_types');
     return saved ? JSON.parse(saved) : INITIAL_SHIFT_TYPES;
@@ -38,7 +37,6 @@ const App: React.FC = () => {
     localStorage.setItem('roster_shift_types', JSON.stringify(shiftTypes));
   }, [shiftTypes]);
 
-  // 3. Employees
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const saved = localStorage.getItem('roster_employees');
     return saved ? JSON.parse(saved) : INITIAL_EMPLOYEES;
@@ -47,7 +45,6 @@ const App: React.FC = () => {
     localStorage.setItem('roster_employees', JSON.stringify(employees));
   }, [employees]);
 
-  // 4. Daily Notes
   const [dailyNotes, setDailyNotes] = useState<DailyNotes>(() => {
     const saved = localStorage.getItem('roster_daily_notes');
     return saved ? JSON.parse(saved) : {};
@@ -56,7 +53,6 @@ const App: React.FC = () => {
     localStorage.setItem('roster_daily_notes', JSON.stringify(dailyNotes));
   }, [dailyNotes]);
 
-  // 5. Required Holiday Count
   const [requiredHolidayCount, setRequiredHolidayCount] = useState<number>(() => {
     const saved = localStorage.getItem('roster_req_holiday_count');
     return saved ? parseInt(saved, 10) : 9;
@@ -65,7 +61,6 @@ const App: React.FC = () => {
     localStorage.setItem('roster_req_holiday_count', requiredHolidayCount.toString());
   }, [requiredHolidayCount]);
 
-  // 6. Required Shifts By Day
   const [requiredShiftsByDay, setRequiredShiftsByDay] = useState<Record<number, string[]>>(() => {
     const saved = localStorage.getItem('roster_req_shifts_rule');
     return saved ? JSON.parse(saved) : REQUIRED_SHIFTS_BY_DAY;
@@ -74,7 +69,6 @@ const App: React.FC = () => {
     localStorage.setItem('roster_req_shifts_rule', JSON.stringify(requiredShiftsByDay));
   }, [requiredShiftsByDay]);
 
-  // 7. Email Config
   const [emailConfig, setEmailConfig] = useState<EmailConfig>(() => {
     const saved = localStorage.getItem('roster_email_config');
     return saved ? JSON.parse(saved) : { enabled: false, sendTime: '09:00', toAddress: '' };
@@ -82,8 +76,6 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('roster_email_config', JSON.stringify(emailConfig));
   }, [emailConfig]);
-
-  // --- End Persistence ---
   
   const [currentDate, setCurrentDate] = useState(new Date(2025, 11, 1));
 
@@ -112,7 +104,6 @@ const App: React.FC = () => {
       const currentTimeStr = `${currentHours}:${currentMinutes}`;
       
       if (currentTimeStr === emailConfig.sendTime) {
-        // Check if we already opened it today to prevent loop
         const lastOpened = localStorage.getItem('last_email_auto_open');
         const today = new Date().toDateString();
         
@@ -128,7 +119,11 @@ const App: React.FC = () => {
   }, [emailConfig, user]);
 
   const handleLogin = (u: User) => setUser(u);
-  const handleLogout = () => setUser(null);
+  const handleLogout = () => {
+      setUser(null);
+      setIsChatOpen(false);
+      setIsAdminSettingsOpen(false);
+  };
 
   const handlePrevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
   const handleNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
@@ -237,7 +232,7 @@ const App: React.FC = () => {
     });
  };
 
-  // STRICT SECURITY: If not logged in, show Auth component only.
+  // STRICT SECURITY: Authentication Check
   if (!user) {
     return <Auth onLogin={handleLogin} />;
   }

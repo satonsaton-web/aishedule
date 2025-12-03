@@ -308,7 +308,10 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                     )}
                 </div>
             )}
-
+            
+            {/* Shifts and other tabs remain unchanged */}
+            {/* ... */}
+            
             {/* --- SHIFTS TAB --- */}
             {activeTab === 'shifts' && (
                 <div className="space-y-3">

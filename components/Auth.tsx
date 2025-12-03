@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { User } from '../types';
 import { Lock, LogIn } from 'lucide-react';
@@ -13,12 +14,14 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Strict password check
     if (password === '0035') {
       onLogin({ username: '管理者', role: 'admin' });
     } else if (password === '4444') {
       onLogin({ username: '閲覧者', role: 'viewer' });
     } else {
-      setError('パスワードが間違っています。');
+      setError('パスワードが間違っています。正しいパスワードを入力してください。');
+      setPassword('');
     }
   };
 
@@ -30,24 +33,24 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             <Lock size={32} />
           </div>
         </div>
-        <h2 className="text-xl font-bold text-center text-gray-800 mb-6">スマート勤務表 AI<br/>ログイン</h2>
+        <h2 className="text-xl font-bold text-center text-gray-800 mb-2">スマート勤務表 AI</h2>
+        <p className="text-center text-gray-500 text-sm mb-6">アクセスにはパスワードが必要です</p>
         
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-2">パスワード</label>
             <input
               type="password"
               required
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none tracking-widest"
+              className="w-full border border-gray-300 rounded-lg px-4 py-3 text-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none tracking-widest text-center"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••"
+              placeholder="パスワードを入力"
               autoFocus
             />
           </div>
           
           {error && (
-            <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center justify-center">
+            <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center justify-center font-bold">
               {error}
             </div>
           )}
