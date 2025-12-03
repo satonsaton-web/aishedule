@@ -80,7 +80,8 @@ export const processRosterRequest = async (
       
       2. **QUESTION Requests** (e.g., "Who is working today?", "Who has no schedule on Tuesday?", "Count holidays for Abe"):
          - Analyze the "Current Schedule Data" provided above.
-         - If checking for "no schedule" or "free", look for entries where shiftIds is empty or the date key is missing for that employee.
+         - **IMPORTANT:** When checking a schedule, you MUST also check the "note" field (remarks). If a note exists (e.g., "Leaving early", "Remote work"), you MUST mention it in your answer.
+         - If checking for "no schedule" or "free", look for entries where shiftIds is empty.
          - If checking for specific shifts (e.g., "Who is on Night Shift"), check if the shiftId is present.
          - Return a JSON with type="ANSWER" and a text message containing the answer.
          - The "message" field must be in Japanese.
