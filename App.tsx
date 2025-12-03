@@ -237,7 +237,10 @@ const App: React.FC = () => {
     });
  };
 
-  if (!user) return <Auth onLogin={handleLogin} />;
+  // STRICT SECURITY: If not logged in, show Auth component only.
+  if (!user) {
+    return <Auth onLogin={handleLogin} />;
+  }
 
   let modalEmployeeName = '';
   let modalStartDate = '';
@@ -293,19 +296,17 @@ const App: React.FC = () => {
            
            <div className="h-6 w-px bg-gray-200 mx-1"></div>
 
-          <button onClick={handlePrint} className="text-gray-500 hover:text-indigo-600 p-2 rounded-full hover:bg-gray-100 transition-colors flex items-center gap-1" title="印刷">
+          <button onClick={handlePrint} className="text-gray-500 hover:text-indigo-600 p-2 rounded-full hover:bg-gray-100 transition-colors" title="印刷">
              <Printer size={20} />
           </button>
 
-          <button onClick={() => setIsEmailModalOpen(true)} className="text-gray-500 hover:text-indigo-600 p-2 rounded-full hover:bg-gray-100 transition-colors flex items-center gap-1" title="メール作成">
+          <button onClick={() => setIsEmailModalOpen(true)} className="text-gray-500 hover:text-indigo-600 p-2 rounded-full hover:bg-gray-100 transition-colors" title="メール作成">
              <Mail size={20} />
           </button>
 
           <div className="flex items-center gap-3 px-4 border-l border-gray-200">
             <div className="text-right">
-              {/* Username removed from Auth, so just show role */}
               <p className="text-sm font-bold text-gray-700">{user.role === 'admin' ? '管理者' : '閲覧者'}</p>
-              <p className="text-xs text-gray-500 uppercase">{user.role === 'admin' ? 'Admin' : 'Viewer'}</p>
             </div>
           </div>
           

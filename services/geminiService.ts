@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { Employee, ShiftType, ScheduleData } from '../types';
 
@@ -25,6 +26,14 @@ export const processRosterRequest = async (
   year: number,
   month: number
 ): Promise<AgentResponse> => {
+  // 1. API Key Check
+  if (!process.env.API_KEY) {
+    return {
+      type: 'ERROR',
+      message: "APIキーが設定されていません。Vercelの環境変数 (Environment Variables) に 'API_KEY' を追加してください。"
+    };
+  }
+
   try {
     const model = 'gemini-2.5-flash';
     
@@ -114,7 +123,7 @@ export const processRosterRequest = async (
     console.error("Gemini API Error:", error);
     return {
       type: 'ERROR',
-      message: "AI処理中にエラーが発生しました。もう一度お試しください。"
+      message: "AI処理中にエラーが発生しました。ネットワーク接続またはAPI設定を確認してください。"
     };
   }
 };

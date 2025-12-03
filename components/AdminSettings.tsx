@@ -208,7 +208,7 @@ const AdminSettings: React.FC<AdminSettingsProps> = ({
                                     <th className="px-3 py-2">氏名 / 役職</th>
                                     <th className="px-3 py-2">背景色</th>
                                     <th className="px-3 py-2 text-center">休日計算</th>
-                                    <th className="px-3 py-2 text-center">区切り線</th>
+                                    <th className="px-3 py-2 text-center">下に区切り線</th>
                                     <th className="px-3 py-2 text-right">操作</th>
                                 </tr>
                             </thead>
