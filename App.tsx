@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, ScheduleData, Employee, ShiftType, DailyNotes, EmailConfig } from './types';
 import { INITIAL_EMPLOYEES, INITIAL_SCHEDULE, INITIAL_SHIFT_TYPES, REQUIRED_SHIFTS_BY_DAY } from './constants';
 import Auth from './components/Auth';
@@ -17,14 +17,75 @@ export type SelectedCell = { empId: string, date: string };
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [schedule, setSchedule] = useState<ScheduleData>(INITIAL_SCHEDULE);
-  const [shiftTypes, setShiftTypes] = useState<ShiftType[]>(INITIAL_SHIFT_TYPES);
-  const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES);
-  const [dailyNotes, setDailyNotes] = useState<DailyNotes>({});
+
+  // --- State with LocalStorage Persistence ---
+
+  // 1. Schedule Data
+  const [schedule, setSchedule] = useState<ScheduleData>(() => {
+    const saved = localStorage.getItem('roster_schedule');
+    return saved ? JSON.parse(saved) : INITIAL_SCHEDULE;
+  });
+  useEffect(() => {
+    localStorage.setItem('roster_schedule', JSON.stringify(schedule));
+  }, [schedule]);
+
+  // 2. Shift Types
+  const [shiftTypes, setShiftTypes] = useState<ShiftType[]>(() => {
+    const saved = localStorage.getItem('roster_shift_types');
+    return saved ? JSON.parse(saved) : INITIAL_SHIFT_TYPES;
+  });
+  useEffect(() => {
+    localStorage.setItem('roster_shift_types', JSON.stringify(shiftTypes));
+  }, [shiftTypes]);
+
+  // 3. Employees
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    const saved = localStorage.getItem('roster_employees');
+    return saved ? JSON.parse(saved) : INITIAL_EMPLOYEES;
+  });
+  useEffect(() => {
+    localStorage.setItem('roster_employees', JSON.stringify(employees));
+  }, [employees]);
+
+  // 4. Daily Notes
+  const [dailyNotes, setDailyNotes] = useState<DailyNotes>(() => {
+    const saved = localStorage.getItem('roster_daily_notes');
+    return saved ? JSON.parse(saved) : {};
+  });
+  useEffect(() => {
+    localStorage.setItem('roster_daily_notes', JSON.stringify(dailyNotes));
+  }, [dailyNotes]);
+
+  // 5. Required Holiday Count
+  const [requiredHolidayCount, setRequiredHolidayCount] = useState<number>(() => {
+    const saved = localStorage.getItem('roster_req_holiday_count');
+    return saved ? parseInt(saved, 10) : 9;
+  });
+  useEffect(() => {
+    localStorage.setItem('roster_req_holiday_count', requiredHolidayCount.toString());
+  }, [requiredHolidayCount]);
+
+  // 6. Required Shifts By Day
+  const [requiredShiftsByDay, setRequiredShiftsByDay] = useState<Record<number, string[]>>(() => {
+    const saved = localStorage.getItem('roster_req_shifts_rule');
+    return saved ? JSON.parse(saved) : REQUIRED_SHIFTS_BY_DAY;
+  });
+  useEffect(() => {
+    localStorage.setItem('roster_req_shifts_rule', JSON.stringify(requiredShiftsByDay));
+  }, [requiredShiftsByDay]);
+
+  // 7. Email Config
+  const [emailConfig, setEmailConfig] = useState<EmailConfig>(() => {
+    const saved = localStorage.getItem('roster_email_config');
+    return saved ? JSON.parse(saved) : { enabled: false, sendTime: '09:00', toAddress: '' };
+  });
+  useEffect(() => {
+    localStorage.setItem('roster_email_config', JSON.stringify(emailConfig));
+  }, [emailConfig]);
+
+  // --- End Persistence ---
   
   const [currentDate, setCurrentDate] = useState(new Date(2025, 11, 1));
-  const [requiredHolidayCount, setRequiredHolidayCount] = useState<number>(9);
-  const [requiredShiftsByDay, setRequiredShiftsByDay] = useState<Record<number, string[]>>(REQUIRED_SHIFTS_BY_DAY);
 
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isAdminSettingsOpen, setIsAdminSettingsOpen] = useState(false);
@@ -40,7 +101,31 @@ const App: React.FC = () => {
   const [selectedDateForNote, setSelectedDateForNote] = useState<string | null>(null);
   const [clipboard, setClipboard] = useState<{ shiftIds: string[], note?: string, ma?: any, businessTrip?: any } | null>(null);
 
-  const [emailConfig, setEmailConfig] = useState<EmailConfig>({ enabled: false, sendTime: '09:00', toAddress: '' });
+  // Email Auto-Open Logic
+  useEffect(() => {
+    const checkTime = () => {
+      if (!emailConfig.enabled || !user) return;
+      
+      const now = new Date();
+      const currentHours = String(now.getHours()).padStart(2, '0');
+      const currentMinutes = String(now.getMinutes()).padStart(2, '0');
+      const currentTimeStr = `${currentHours}:${currentMinutes}`;
+      
+      if (currentTimeStr === emailConfig.sendTime) {
+        // Check if we already opened it today to prevent loop
+        const lastOpened = localStorage.getItem('last_email_auto_open');
+        const today = new Date().toDateString();
+        
+        if (lastOpened !== today) {
+          setIsEmailModalOpen(true);
+          localStorage.setItem('last_email_auto_open', today);
+        }
+      }
+    };
+
+    const intervalId = setInterval(checkTime, 60000); // Check every minute
+    return () => clearInterval(intervalId);
+  }, [emailConfig, user]);
 
   const handleLogin = (u: User) => setUser(u);
   const handleLogout = () => setUser(null);
@@ -218,8 +303,9 @@ const App: React.FC = () => {
 
           <div className="flex items-center gap-3 px-4 border-l border-gray-200">
             <div className="text-right">
-              <p className="text-sm font-bold text-gray-700">{user.username}</p>
-              <p className="text-xs text-gray-500 uppercase">{user.role === 'admin' ? '管理者' : '閲覧者'}</p>
+              {/* Username removed from Auth, so just show role */}
+              <p className="text-sm font-bold text-gray-700">{user.role === 'admin' ? '管理者' : '閲覧者'}</p>
+              <p className="text-xs text-gray-500 uppercase">{user.role === 'admin' ? 'Admin' : 'Viewer'}</p>
             </div>
           </div>
           

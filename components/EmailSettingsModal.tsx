@@ -47,7 +47,7 @@ const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
                     id="toggle" 
                     checked={enabled}
                     onChange={(e) => setEnabled(e.target.checked)}
-                    className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-6"
+                    className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer peer checked:right-0 right-6 transition-all duration-300 border-gray-300 checked:border-indigo-600"
                 />
                 <label 
                     htmlFor="toggle" 
@@ -56,17 +56,6 @@ const EmailSettingsModal: React.FC<EmailSettingsModalProps> = ({
             </div>
             <label htmlFor="toggle" className="text-sm font-bold text-gray-700">自動送信を有効にする</label>
           </div>
-            <style jsx>{`
-                .toggle-checkbox:checked {
-                    right: 0;
-                    border-color: #4f46e5;
-                }
-                .toggle-checkbox {
-                    right: 24px;
-                    border-color: #d1d5db;
-                    transition: all 0.3s;
-                }
-            `}</style>
 
           <div className={!enabled ? 'opacity-50 pointer-events-none' : ''}>
               <div className="mb-4">
