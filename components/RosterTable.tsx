@@ -1,418 +1,153 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Employee, ShiftType, ScheduleData, DailyNotes } from '../types';
-import { getDaysInMonth, HOLIDAYS } from '../constants';
-import { ArrowRight, ArrowLeft, ArrowLeftRight, ChevronLeft, ChevronRight, Copy, Trash2, AlertTriangle, AlertCircle, MoveRight, Edit, Briefcase } from 'lucide-react';
-import { SelectedCell } from '../App';
+import { GoogleGenAI } from "@google/genai";
+import { Employee, ShiftType, ScheduleData } from '../types';
 
-interface RosterTableProps {
-  year: number;
-  month: number;
-  employees: Employee[];
-  shiftTypes: ShiftType[];
-  schedule: ScheduleData;
-  dailyNotes: DailyNotes;
-  selectedCells: SelectedCell[];
-  onSelectionChange: (cells: SelectedCell[]) => void;
-  onOpenEditModal: () => void;
-  onDailyNoteClick: (date: string) => void;
-  canEdit: boolean;
-  onPrevMonth?: () => void;
-  onNextMonth?: () => void;
-  onMoveShift?: (srcEmpId: string, srcDate: string, destEmpId: string, destDate: string) => void;
-  onCopyShift?: (srcEmpId: string, srcDate: string, destEmpId: string, destDate: string) => void;
-  onDeleteShift?: (empId: string, date: string) => void;
-  onDeleteSelected?: () => void;
-  onCopySelected?: () => void;
-  onPasteSelected?: () => void;
-  requiredHolidayCount?: number;
-  requiredShiftsByDay?: Record<number, string[]>;
-}
-
-const GRAY_OUT_SHIFTS = ['rest', 'special_leave', 'paid_leave', 'comp_leave'];
-const HOLIDAY_COUNT_TARGETS = ['rest', 'comp_leave'];
-
-const RosterTable: React.FC<RosterTableProps> = ({
-  year,
-  month,
-  employees,
-  shiftTypes,
-  schedule,
-  dailyNotes,
-  selectedCells,
-  onSelectionChange,
-  onOpenEditModal,
-  onDailyNoteClick,
-  canEdit,
-  onPrevMonth,
-  onNextMonth,
-  onMoveShift,
-  onCopyShift,
-  onDeleteShift,
-  onDeleteSelected,
-  onCopySelected,
-  onPasteSelected,
-  requiredHolidayCount = 8,
-  requiredShiftsByDay = {}
-}) => {
-  const days = getDaysInMonth(year, month);
-  const weekDays = ['日', '月', '火', '水', '木', '金', '土'];
-
-  // Drag selection state
-  const [dragStart, setDragStart] = useState<{ empId: string, date: Date, isCtrl: boolean } | null>(null);
-  const [hoverDate, setHoverDate] = useState<Date | null>(null);
-  const [hoverEmpId, setHoverEmpId] = useState<string | null>(null);
-
-  // Drag & Drop Moving state
-  const [movingShift, setMovingShift] = useState<{ empId: string, date: string } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
-
-  const getShiftEntry = (dateStr: string, empId: string) => {
-    return schedule[dateStr]?.[empId] || { shiftIds: [] };
-  };
-
-  const hasShift = (dateStr: string, empId: string, shiftId: string) => {
-    const entry = schedule[dateStr]?.[empId];
-    return entry?.shiftIds?.includes(shiftId);
-  };
-
-  const formatDate = useCallback((date: Date) => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }, []);
-
-  const handleMouseDown = (e: React.MouseEvent, empId: string, date: Date) => {
-    if (!canEdit) return;
-    if (e.button !== 0) return;
-
-    setContextMenu(null);
-    const isCtrl = e.ctrlKey || e.metaKey;
-    
-    setDragStart({ empId, date, isCtrl });
-    setHoverDate(date);
-    setHoverEmpId(empId);
-  };
-
-  const handleMouseEnter = (empId: string, date: Date) => {
-    if (!canEdit) return;
-    if (dragStart) {
-       if (dragStart.empId === empId) {
-          setHoverDate(date);
-          setHoverEmpId(empId);
-       }
-    }
-  };
-
-  useEffect(() => {
-    if (!dragStart) return;
-
-    const handleWindowMouseUp = () => {
-      let newSelection: SelectedCell[] = [];
-
-      if (hoverDate && hoverEmpId === dragStart.empId) {
-        const start = dragStart.date < hoverDate ? dragStart.date : hoverDate;
-        const end = dragStart.date < hoverDate ? hoverDate : dragStart.date;
-        
-        const current = new Date(start);
-        while (current <= end) {
-            newSelection.push({ empId: dragStart.empId, date: formatDate(current) });
-            current.setDate(current.getDate() + 1);
-        }
-      } else {
-         newSelection.push({ empId: dragStart.empId, date: formatDate(dragStart.date) });
-      }
-
-      if (dragStart.isCtrl) {
-          // Toggle logic for ctrl selection
-          const unique = [...selectedCells];
-          newSelection.forEach(n => {
-               const existsIdx = unique.findIndex(u => u.empId === n.empId && u.date === n.date);
-               if (existsIdx >= 0) {
-                   unique.splice(existsIdx, 1);
-               } else {
-                   unique.push(n);
-               }
-          });
-          onSelectionChange(unique);
-      } else {
-          onSelectionChange(newSelection);
-          onOpenEditModal();
-      }
-      
-      setDragStart(null);
-      setHoverDate(null);
-      setHoverEmpId(null);
-    };
-
-    window.addEventListener('mouseup', handleWindowMouseUp);
-    return () => window.removeEventListener('mouseup', handleWindowMouseUp);
-  }, [dragStart, hoverDate, hoverEmpId, selectedCells, onSelectionChange, onOpenEditModal, formatDate]);
-
-  const isCellSelected = (empId: string, dateStr: string, dateObj: Date) => {
-    const isPermSelected = selectedCells.some(c => c.empId === empId && c.date === dateStr);
-    let isDragSelected = false;
-    if (dragStart && dragStart.empId === empId && hoverDate) {
-         const start = dragStart.date < hoverDate ? dragStart.date : hoverDate;
-         const end = dragStart.date < hoverDate ? hoverDate : dragStart.date;
-         if (dateObj >= start && dateObj <= end) {
-             isDragSelected = true;
-         }
-    }
-    return isPermSelected || isDragSelected;
-  };
-
-  const handleDragStart = (e: React.DragEvent, empId: string, dateStr: string) => {
-    if (!canEdit) return;
-    setMovingShift({ empId, date: dateStr });
-    e.dataTransfer.effectAllowed = 'move';
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    if (!canEdit) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDrop = (e: React.DragEvent, targetEmpId: string, targetDateStr: string) => {
-    if (!canEdit || !movingShift) return;
-    e.preventDefault();
-    if (onMoveShift) onMoveShift(movingShift.empId, movingShift.date, targetEmpId, targetDateStr);
-    setMovingShift(null);
-  };
-
-  const handleContextMenu = (e: React.MouseEvent, empId: string, dateStr: string) => {
-    e.preventDefault();
-    if (!canEdit) return;
-    const isSelected = selectedCells.some(c => c.empId === empId && c.date === dateStr);
-    if (!isSelected) {
-        onSelectionChange([{ empId, date: dateStr }]);
-    }
-    setContextMenu({ x: e.clientX, y: e.clientY });
-  };
-
-  const countEmployeeHolidays = (empId: string) => {
-     let count = 0;
-     days.forEach(day => {
-        const dateStr = formatDate(day);
-        const entry = getShiftEntry(dateStr, empId);
-        if (entry.shiftIds.some(id => HOLIDAY_COUNT_TARGETS.includes(id))) {
-            count++;
-        }
-     });
-     return count;
-  };
-
-  return (
-    <div 
-      className="flex flex-col h-full bg-white shadow-sm border border-gray-300 rounded-lg overflow-hidden select-none"
-      onClick={() => setContextMenu(null)}
-    >
-      <div className="overflow-auto custom-scrollbar flex-1 relative">
-        <table className="min-w-max border-collapse text-sm">
-          {/* Header Row */}
-          <thead className="sticky top-0 z-20 bg-gray-50 text-gray-700 font-bold shadow-sm">
-            <tr>
-              <th className="sticky left-0 z-30 bg-gray-50 border-b border-r border-gray-300 p-2 min-w-[150px] text-left">
-                <div className="flex items-center justify-between">
-                  <span>{year}年{month + 1}月</span>
-                  <div className="flex gap-1">
-                      {onPrevMonth && <button onClick={onPrevMonth} className="p-1 hover:bg-gray-200 rounded"><ChevronLeft size={16}/></button>}
-                      {onNextMonth && <button onClick={onNextMonth} className="p-1 hover:bg-gray-200 rounded"><ChevronRight size={16}/></button>}
-                  </div>
-                </div>
-              </th>
-              {days.map((day) => {
-                const dateStr = formatDate(day);
-                const isHoliday = HOLIDAYS.includes(dateStr);
-                const dayOfWeek = day.getDay();
-                const isSunday = dayOfWeek === 0;
-                const isSaturday = dayOfWeek === 6;
-                const bgClass = (isSunday || isHoliday) ? 'bg-red-50 text-red-600' : isSaturday ? 'bg-blue-50 text-blue-600' : '';
-
-                const requiredShiftIds = requiredShiftsByDay[dayOfWeek] || [];
-                let missingShiftNames: string[] = [];
-                if (requiredShiftIds.length > 0) {
-                    requiredShiftIds.forEach(reqId => {
-                         const hasSomeone = employees.some(emp => {
-                            const entry = schedule[dateStr]?.[emp.id];
-                            return entry?.shiftIds?.includes(reqId);
-                        });
-                        if (!hasSomeone) {
-                            const shiftName = shiftTypes.find(s => s.id === reqId)?.shortName || reqId;
-                            missingShiftNames.push(shiftName);
-                        }
-                    });
-                }
-
-                return (
-                  <th key={dateStr} className={`border-b border-r border-gray-200 p-1 min-w-[60px] text-center ${bgClass} relative group`}>
-                    <div className="text-lg leading-none">{day.getDate()}</div>
-                    <div className="text-xs font-normal">
-                      {weekDays[dayOfWeek]}
-                      {isHoliday && <span className="block text-[8px] scale-75">祝</span>}
-                    </div>
-                    {missingShiftNames.length > 0 && (
-                        <div className="absolute top-0 right-0 p-0.5" title={`不足: ${missingShiftNames.join(', ')}`}>
-                            <AlertTriangle size={12} className="text-red-500 fill-red-100" />
-                        </div>
-                    )}
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-
-          {/* Body */}
-          <tbody>
-            <tr className="bg-gray-100">
-              <td className="sticky left-0 z-10 bg-gray-100 border-b border-r border-gray-300 p-2 text-xs font-bold text-gray-600 text-center">
-                備考
-              </td>
-              {days.map((day) => {
-                const dateStr = formatDate(day);
-                const note = dailyNotes[dateStr];
-                return (
-                  <td 
-                    key={`note-${dateStr}`}
-                    onClick={() => canEdit && onDailyNoteClick(dateStr)}
-                    className={`border-b border-r border-gray-200 p-1 text-[10px] text-gray-600 align-top hover:bg-gray-200 cursor-pointer text-center whitespace-pre-wrap break-words w-16 min-h-[32px]`}
-                  >
-                    {note || (canEdit && <span className="opacity-0 hover:opacity-100 text-lg leading-none">+</span>)}
-                  </td>
-                );
-              })}
-            </tr>
-
-            {employees.map((emp) => {
-              const holidayCount = countEmployeeHolidays(emp.id);
-              const holidayDiff = holidayCount - requiredHolidayCount;
-              const rowBorderClass = emp.showDivider ? 'border-b-4 border-gray-400' : 'border-b border-gray-200';
-              const nameBgClass = emp.backgroundColor || 'bg-white';
-
-              return (
-              <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
-                <td className={`sticky left-0 z-10 ${nameBgClass} border-r border-gray-300 p-2 font-medium text-gray-800 h-20 ${rowBorderClass}`}>
-                  <div className="flex flex-col h-full justify-center relative">
-                    <span>{emp.name}</span>
-                    <span className="text-[10px] text-gray-500 font-normal">{emp.role}</span>
-                    
-                    {(emp.isHolidayManaged ?? true) && (
-                        <div className="flex items-center gap-1 mt-1">
-                            <span className="text-[10px] bg-gray-100 px-1 rounded text-gray-600">休:{holidayCount}</span>
-                            {holidayDiff !== 0 && (
-                                <span 
-                                    className={`text-[10px] px-1 rounded font-bold text-white ${holidayDiff < 0 ? 'bg-red-500' : 'bg-blue-500'}`}
-                                >
-                                    {holidayDiff > 0 ? '+' : ''}{holidayDiff}
-                                </span>
-                            )}
-                        </div>
-                    )}
-                  </div>
-                </td>
-                {days.map((day) => {
-                  const dateStr = formatDate(day);
-                  const entry = getShiftEntry(dateStr, emp.id);
-                  const activeShifts = entry.shiftIds.map(id => shiftTypes.find(s => s.id === id)).filter(Boolean) as ShiftType[];
-                  const isRefresh = entry.shiftIds.includes('refresh');
-                  const isBusinessTrip = entry.shiftIds.includes('business_trip');
-                  
-                  const prevDate = new Date(day); prevDate.setDate(day.getDate() - 1);
-                  const hasPrevRefresh = hasShift(formatDate(prevDate), emp.id, 'refresh');
-                  const nextDate = new Date(day); nextDate.setDate(day.getDate() + 1);
-                  const hasNextRefresh = hasShift(formatDate(nextDate), emp.id, 'refresh');
-
-                  const isGrayOut = entry.shiftIds.some(id => GRAY_OUT_SHIFTS.includes(id));
-                  const isHoliday = HOLIDAYS.includes(dateStr);
-                  const isSunday = day.getDay() === 0;
-                  const isSaturday = day.getDay() === 6;
-                  
-                  let bgClass = '';
-                  if (isGrayOut) bgClass = 'bg-gray-300';
-                  else if (isBusinessTrip) bgClass = 'bg-yellow-100'; 
-                  else if (isRefresh) bgClass = 'bg-teal-100'; 
-                  else if (isSunday || isHoliday) bgClass = 'bg-red-50/30';
-                  else if (isSaturday) bgClass = 'bg-blue-50/30';
-
-                  const selected = isCellSelected(emp.id, dateStr, day);
-                  const selectedClass = selected ? 'ring-2 ring-indigo-500 bg-indigo-50 z-10' : '';
-                  const hasContent = activeShifts.length > 0;
-
-                  return (
-                    <td
-                      key={dateStr}
-                      draggable={canEdit && hasContent && !selected} 
-                      onDragStart={(e) => handleDragStart(e, emp.id, dateStr)}
-                      onDragOver={handleDragOver}
-                      onDrop={(e) => handleDrop(e, emp.id, dateStr)}
-                      onMouseDown={(e) => handleMouseDown(e, emp.id, day)}
-                      onMouseEnter={() => handleMouseEnter(emp.id, day)}
-                      onContextMenu={(e) => handleContextMenu(e, emp.id, dateStr)}
-                      className={`border-r border-gray-200 p-1 text-center cursor-pointer relative h-20 w-16 align-top
-                        ${canEdit ? 'hover:opacity-80' : ''} ${bgClass} ${selectedClass} ${rowBorderClass}
-                        ${hasContent && canEdit ? 'cursor-grab active:cursor-grabbing' : ''}
-                      `}
-                    >
-                      <div className="flex flex-col gap-1 w-full h-full items-center pointer-events-none">
-                        {activeShifts.map((shift, idx) => {
-                          if (shift.id === 'refresh') {
-                            if (hasPrevRefresh && hasNextRefresh) {
-                                return <div key={idx} className="absolute inset-0 flex items-center justify-center opacity-50"><ArrowLeftRight className="text-teal-700 w-full h-8" strokeWidth={2.5}/></div>
-                            } else if (!hasPrevRefresh && hasNextRefresh) {
-                                return <div key={idx} className="absolute inset-0 flex items-center justify-center opacity-50 text-teal-700 font-bold">{shift.shortName} <ArrowRight size={16} strokeWidth={2.5}/></div>
-                            } else if (hasPrevRefresh && !hasNextRefresh) {
-                                return <div key={idx} className="absolute inset-0 flex items-center justify-center opacity-50 text-teal-700 font-bold"><ArrowLeft size={16} strokeWidth={2.5}/> {shift.shortName}</div>
-                            } else {
-                                return <div key={idx} className="absolute inset-0 flex items-center justify-center text-teal-800 font-bold">{shift.shortName}</div>
-                            }
-                          }
-                          
-                          if (GRAY_OUT_SHIFTS.includes(shift.id)) {
-                             return <div key={idx} className="w-full py-2 flex items-center justify-center font-bold text-gray-700 text-lg">{shift.shortName}</div>
-                          }
-                          
-                          if (shift.id === 'business_trip') {
-                             return <div key={idx} className={`w-full rounded px-0.5 py-1 text-[10px] font-bold shadow-sm flex flex-row items-center justify-center gap-1 whitespace-nowrap overflow-hidden ${shift.color} ${shift.textColor}`}>
-                                <Briefcase size={12} className="shrink-0"/>
-                                <span className="truncate">{entry.businessTrip?.destination || '未入力'}</span>
-                             </div>
-                          }
-
-                          if (shift.id === 'ma') {
-                             return <div key={idx} className={`w-full rounded px-0.5 py-0.5 text-[10px] font-bold shadow-sm flex items-center justify-center ${shift.color} ${shift.textColor}`}>MA {entry.ma?.time || ''}</div>
-                          }
-
-                          return <div key={idx} className={`w-full rounded px-0.5 py-0.5 text-[10px] font-bold shadow-sm flex items-center justify-center truncate ${shift.color} ${shift.textColor}`}>{shift.shortName}</div>
-                        })}
-                        
-                        {(entry.ma?.content || entry.note) && (
-                           <div className="mt-auto w-full text-left bg-white border border-yellow-200 rounded px-1 py-0.5 relative z-10 group shadow-sm">
-                             <p className="text-[9px] text-gray-700 leading-tight line-clamp-2">{entry.ma?.content || entry.note}</p>
-                           </div>
-                        )}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            )})}
-          </tbody>
-        </table>
-      </div>
-      {contextMenu && (
-        <div className="fixed bg-white shadow-xl rounded border border-gray-200 z-50 flex flex-col min-w-[140px]" style={{ left: contextMenu.x, top: contextMenu.y }}>
-           <button onClick={() => { onOpenEditModal(); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm text-gray-700"><Edit size={14}/> 編集</button>
-           <div className="border-t border-gray-100 my-1"></div>
-           <button onClick={() => { if (onCopySelected) onCopySelected(); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm text-gray-700"><Copy size={14}/> コピー</button>
-           <button onClick={() => { if (onPasteSelected) onPasteSelected(); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm text-gray-700"><ArrowRight size={14}/> 貼り付け</button>
-           <div className="border-t border-gray-100 my-1"></div>
-           <button onClick={() => { if (onDeleteSelected) onDeleteSelected(); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-red-50 flex items-center gap-2 text-sm text-red-600"><Trash2 size={14}/> 削除</button>
-        </div>
-      )}
-    </div>
-  );
+// APIキーを安全に取得する関数
+const getApiKey = () => {
+  // 1. 標準的なプロセス環境変数 (Node.js/Next.js等)
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+  // 2. Vite環境変数 (import.meta.env)
+  // @ts-ignore
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
+    // @ts-ignore
+    return import.meta.env.VITE_API_KEY;
+  }
+  return '';
 };
 
-export default RosterTable;
+export interface AgentResponse {
+  type: 'UPDATE' | 'ANSWER' | 'ERROR';
+  message: string;
+  updates?: {
+    date: string;
+    employeeId: string;
+    shiftIds: string[];
+    note?: string;
+  }[];
+}
+
+export const processRosterRequest = async (
+  userPrompt: string,
+  employees: Employee[],
+  shiftTypes: ShiftType[],
+  currentSchedule: ScheduleData,
+  year: number,
+  month: number
+): Promise<AgentResponse> => {
+  const apiKey = getApiKey();
+
+  // API Key Check
+  if (!apiKey) {
+    console.error("API Key is missing. Checked process.env.API_KEY and VITE_API_KEY.");
+    return {
+      type: 'ERROR',
+      message: "APIキーが設定されていません。Vercelの環境変数名を 'VITE_API_KEY' に変更して再デプロイしてください。"
+    };
+  }
+
+  try {
+    // クライアントをリクエストの都度生成（キーの確実な適用）
+    const ai = new GoogleGenAI({ apiKey: apiKey });
+    const model = 'gemini-2.5-flash';
+    
+    // Construct context
+    const employeeList = employees.map(e => `${e.name} (ID: ${e.id})`).join(', ');
+    const shiftList = shiftTypes.map(s => `${s.name} (ID: ${s.id})`).join(', ');
+    const scheduleContext = JSON.stringify(currentSchedule);
+
+    const systemInstruction = `
+      You are an intelligent Roster Assistant. You manage a shift schedule for ${year}-${month + 1}.
+      
+      **CRITICAL RULE: All output text in the 'message' field MUST be in Japanese.**
+      
+      **Context Data:**
+      - Employees: ${employeeList}
+      - Valid Shift Types: ${shiftList}
+      - Current Year/Month: ${year}-${month + 1}
+      - **Current Schedule Data**: ${scheduleContext}
+      
+      **Your Goal:**
+      Analyze the user's request.
+      
+      1. **UPDATE Requests** (e.g., "Set Tanaka to Morning shift on Fridays", "Add Meeting for Suzuki today"):
+         - Identify specific dates in ${year}-${month + 1}.
+         - Identify the Employee ID.
+         - Identify Shift IDs.
+         - Return a JSON with type="UPDATE".
+         - The "message" field must be a polite Japanese summary of what you did.
+      
+      2. **QUESTION Requests** (e.g., "Who is working today?", "Who has no schedule on Tuesday?", "Count holidays for Abe"):
+         - Analyze the "Current Schedule Data" provided above.
+         - **IMPORTANT:** When checking a schedule, you MUST also check the "note" field (remarks). If a note exists (e.g., "Leaving early", "Remote work"), you MUST mention it in your answer.
+         - If checking for "no schedule" or "free", look for entries where shiftIds is empty.
+         - If checking for specific shifts (e.g., "Who is on Night Shift"), check if the shiftId is present.
+         - Return a JSON with type="ANSWER" and a text message containing the answer.
+         - The "message" field must be in Japanese.
+      
+      **JSON Response Format:**
+      
+      For Updates:
+      {
+        "type": "UPDATE",
+        "message": "変更内容の要約（日本語）",
+        "updates": [
+          { 
+            "date": "YYYY-MM-DD", 
+            "employeeId": "emp1", 
+            "shiftIds": ["morning_n", "meeting"], 
+            "note": "optional text" 
+          }
+        ]
+      }
+      
+      For Answers:
+      {
+        "type": "ANSWER",
+        "message": "スケジュールデータに基づく回答（日本語）"
+      }
+
+      **Rules:**
+      - Date format: YYYY-MM-DD.
+      - Only generate dates for ${month + 1} (Month index ${month}).
+      - Be strict about IDs.
+      - **ALWAYS RESPOND IN JAPANESE.**
+    `;
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: userPrompt,
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+      }
+    });
+
+    const responseText = response.text;
+    if (!responseText) {
+        throw new Error("No response from AI");
+    }
+
+    const parsedData = JSON.parse(responseText) as AgentResponse;
+    return parsedData;
+
+  } catch (error: any) {
+    console.error("Gemini API Error:", error);
+    // 生のエラーメッセージを取得して表示
+    const detailedMsg = error.message || JSON.stringify(error);
+    
+    // APIキー関連のエラーの場合、親切なメッセージを返す
+    if (detailedMsg.includes('API key') || detailedMsg.includes('400')) {
+         return {
+            type: 'ERROR',
+            message: `APIキーエラーが発生しました。\nVercelの設定で変数名を「VITE_API_KEY」に変更し、再デプロイしてください。\n詳細: ${detailedMsg}`
+        };
+    }
+
+    return {
+      type: 'ERROR',
+      message: `AI処理エラー: ${detailedMsg}`
+    };
+  }
+};
