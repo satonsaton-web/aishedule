@@ -56,3 +56,8 @@ export interface EmailConfig {
   sendTime: string; // "09:00"
   toAddress: string;
 }
+
+export interface SelectedCell {
+  empId: string;
+  date: string;
+}

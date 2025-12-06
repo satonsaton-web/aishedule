@@ -1,9 +1,8 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Employee, ShiftType, ScheduleData, DailyNotes } from '../types';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Employee, ShiftType, ScheduleData, DailyNotes, SelectedCell } from '../types';
 import { getDaysInMonth, HOLIDAYS } from '../constants';
-import { ArrowRight, ArrowLeft, ArrowLeftRight, ChevronLeft, ChevronRight, Copy, Trash2, AlertTriangle, AlertCircle, MoveRight, Edit, Briefcase } from 'lucide-react';
-import { SelectedCell } from '../App';
+import { ArrowRight, ArrowLeft, ArrowLeftRight, ChevronLeft, ChevronRight, Copy, Trash2, AlertTriangle, AlertCircle, Edit, Briefcase, FileText, Clock, Layers } from 'lucide-react';
 
 interface RosterTableProps {
   year: number;
@@ -20,10 +19,8 @@ interface RosterTableProps {
   onPrevMonth?: () => void;
   onNextMonth?: () => void;
   onMoveShift?: (srcEmpId: string, srcDate: string, destEmpId: string, destDate: string) => void;
-  onCopyShift?: (srcEmpId: string, srcDate: string, destEmpId: string, destDate: string) => void;
-  onDeleteShift?: (empId: string, date: string) => void;
   onDeleteSelected?: () => void;
-  onCopySelected?: () => void;
+  onCopySelected?: (mode: 'all' | 'shift' | 'note') => void;
   onPasteSelected?: () => void;
   requiredHolidayCount?: number;
   requiredShiftsByDay?: Record<number, string[]>;
@@ -47,8 +44,6 @@ const RosterTable: React.FC<RosterTableProps> = ({
   onPrevMonth,
   onNextMonth,
   onMoveShift,
-  onCopyShift,
-  onDeleteShift,
   onDeleteSelected,
   onCopySelected,
   onPasteSelected,
@@ -65,7 +60,11 @@ const RosterTable: React.FC<RosterTableProps> = ({
 
   // Drag & Drop Moving state
   const [movingShift, setMovingShift] = useState<{ empId: string, date: string } | null>(null);
+  
+  // Context Menu & Tooltip
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number } | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number, y: number, content: React.ReactNode } | null>(null);
+  const tooltipTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const getShiftEntry = (dateStr: string, empId: string) => {
     return schedule[dateStr]?.[empId] || { shiftIds: [] };
@@ -83,9 +82,9 @@ const RosterTable: React.FC<RosterTableProps> = ({
     return `${y}-${m}-${d}`;
   }, []);
 
+  // --- Mouse Handlers for Selection ---
   const handleMouseDown = (e: React.MouseEvent, empId: string, date: Date) => {
-    if (!canEdit) return;
-    if (e.button !== 0) return;
+    if (e.button !== 0) return; // Left click only for selection
 
     setContextMenu(null);
     const isCtrl = e.ctrlKey || e.metaKey;
@@ -95,16 +94,57 @@ const RosterTable: React.FC<RosterTableProps> = ({
     setHoverEmpId(empId);
   };
 
-  const handleMouseEnter = (empId: string, date: Date) => {
-    if (!canEdit) return;
+  const handleMouseEnter = (e: React.MouseEvent, empId: string, date: Date, dateStr: string, note?: string) => {
+    // 1. Drag Selection Logic
     if (dragStart) {
        if (dragStart.empId === empId) {
           setHoverDate(date);
           setHoverEmpId(empId);
        }
     }
+
+    // 2. Tooltip Logic
+    const entry = schedule[dateStr]?.[empId];
+    if (entry || (note && note.length > 0)) {
+        if (tooltipTimeoutRef.current) clearTimeout(tooltipTimeoutRef.current);
+        
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        const activeShifts = entry?.shiftIds?.map(id => shiftTypes.find(s => s.id === id)).filter(Boolean) as ShiftType[] || [];
+        
+        if (activeShifts.length > 0 || entry?.note || entry?.ma || entry?.businessTrip || note) {
+             const content = (
+                <div className="flex flex-col gap-2">
+                    {activeShifts.map((s, idx) => (
+                        <div key={idx} className={`px-2 py-1 rounded text-xs font-bold ${s.color} ${s.textColor}`}>
+                            {s.name} 
+                            {s.id === 'ma' && entry?.ma && ` (${entry.ma.time} ${entry.ma.content})`}
+                            {s.id === 'business_trip' && entry?.businessTrip && ` (${entry.businessTrip.destination})`}
+                        </div>
+                    ))}
+
+                    {(entry?.note || note) && (
+                        <div className="bg-yellow-50 p-2 rounded border border-yellow-200 text-xs text-gray-800 whitespace-pre-wrap">
+                            <div className="flex items-center gap-1 font-bold text-yellow-700 mb-1"><FileText size={10}/> 備考</div>
+                            {entry?.note || note}
+                        </div>
+                    )}
+                </div>
+             );
+             
+             setTooltip({
+                 x: rect.left + window.scrollX,
+                 y: rect.bottom + window.scrollY + 5,
+                 content
+             });
+        }
+    }
   };
 
+  const handleMouseLeave = () => {
+      setTooltip(null);
+  };
+
+  // --- End Selection ---
   useEffect(() => {
     if (!dragStart) return;
 
@@ -125,7 +165,6 @@ const RosterTable: React.FC<RosterTableProps> = ({
       }
 
       if (dragStart.isCtrl) {
-          // Toggle logic for ctrl selection
           const unique = [...selectedCells];
           newSelection.forEach(n => {
                const existsIdx = unique.findIndex(u => u.empId === n.empId && u.date === n.date);
@@ -138,7 +177,7 @@ const RosterTable: React.FC<RosterTableProps> = ({
           onSelectionChange(unique);
       } else {
           onSelectionChange(newSelection);
-          onOpenEditModal();
+          if (canEdit) onOpenEditModal();
       }
       
       setDragStart(null);
@@ -148,7 +187,7 @@ const RosterTable: React.FC<RosterTableProps> = ({
 
     window.addEventListener('mouseup', handleWindowMouseUp);
     return () => window.removeEventListener('mouseup', handleWindowMouseUp);
-  }, [dragStart, hoverDate, hoverEmpId, selectedCells, onSelectionChange, onOpenEditModal, formatDate]);
+  }, [dragStart, hoverDate, hoverEmpId, selectedCells, onSelectionChange, onOpenEditModal, formatDate, canEdit]);
 
   const isCellSelected = (empId: string, dateStr: string, dateObj: Date) => {
     const isPermSelected = selectedCells.some(c => c.empId === empId && c.date === dateStr);
@@ -163,18 +202,17 @@ const RosterTable: React.FC<RosterTableProps> = ({
     return isPermSelected || isDragSelected;
   };
 
+  // --- Drag & Drop Shift ---
   const handleDragStart = (e: React.DragEvent, empId: string, dateStr: string) => {
     if (!canEdit) return;
     setMovingShift({ empId, date: dateStr });
     e.dataTransfer.effectAllowed = 'move';
   };
-
   const handleDragOver = (e: React.DragEvent) => {
     if (!canEdit) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   };
-
   const handleDrop = (e: React.DragEvent, targetEmpId: string, targetDateStr: string) => {
     if (!canEdit || !movingShift) return;
     e.preventDefault();
@@ -182,6 +220,7 @@ const RosterTable: React.FC<RosterTableProps> = ({
     setMovingShift(null);
   };
 
+  // --- Context Menu ---
   const handleContextMenu = (e: React.MouseEvent, empId: string, dateStr: string) => {
     e.preventDefault();
     if (!canEdit) return;
@@ -190,6 +229,13 @@ const RosterTable: React.FC<RosterTableProps> = ({
         onSelectionChange([{ empId, date: dateStr }]);
     }
     setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleCellClick = (empId: string, dateStr: string) => {
+      if (!canEdit) {
+          onSelectionChange([{ empId, date: dateStr }]);
+          onOpenEditModal();
+      }
   };
 
   const countEmployeeHolidays = (empId: string) => {
@@ -206,15 +252,26 @@ const RosterTable: React.FC<RosterTableProps> = ({
 
   return (
     <div 
-      className="flex flex-col h-full bg-white shadow-sm border border-gray-300 rounded-lg overflow-hidden select-none"
+      className="flex flex-col h-full bg-white shadow-sm border border-gray-300 rounded-lg overflow-hidden select-none relative"
       onClick={() => setContextMenu(null)}
     >
+      {/* Custom Floating Tooltip */}
+      {tooltip && (
+        <div 
+            className="fixed z-50 bg-white p-3 rounded-lg shadow-2xl border border-gray-200 text-sm max-w-xs pointer-events-none animate-in fade-in zoom-in-95 duration-100"
+            style={{ top: tooltip.y, left: tooltip.x }}
+        >
+            {tooltip.content}
+        </div>
+      )}
+
       <div className="overflow-auto custom-scrollbar flex-1 relative">
         <table className="min-w-max border-collapse text-sm">
           {/* Header Row */}
           <thead className="sticky top-0 z-20 bg-gray-50 text-gray-700 font-bold shadow-sm">
             <tr>
-              <th className="sticky left-0 z-30 bg-gray-50 border-b border-r border-gray-300 p-2 min-w-[150px] text-left">
+              {/* Emphasized horizontal line (bottom), normal vertical line */}
+              <th className="sticky left-0 z-30 bg-gray-50 border-b-2 border-gray-400 border-r border-gray-200 p-2 min-w-[150px] text-left">
                 <div className="flex items-center justify-between">
                   <span>{year}年{month + 1}月</span>
                   <div className="flex gap-1">
@@ -247,7 +304,7 @@ const RosterTable: React.FC<RosterTableProps> = ({
                 }
 
                 return (
-                  <th key={dateStr} className={`border-b border-r border-gray-200 p-1 min-w-[60px] text-center ${bgClass} relative group`}>
+                  <th key={dateStr} className={`border-b-2 border-gray-400 border-r border-gray-200 p-1 min-w-[60px] text-center ${bgClass} relative group`}>
                     <div className="text-lg leading-none">{day.getDate()}</div>
                     <div className="text-xs font-normal">
                       {weekDays[dayOfWeek]}
@@ -267,7 +324,7 @@ const RosterTable: React.FC<RosterTableProps> = ({
           {/* Body */}
           <tbody>
             <tr className="bg-gray-100">
-              <td className="sticky left-0 z-10 bg-gray-100 border-b border-r border-gray-300 p-2 text-xs font-bold text-gray-600 text-center">
+              <td className="sticky left-0 z-10 bg-gray-100 border-b border-gray-300 border-r border-gray-200 p-2 text-xs font-bold text-gray-600 text-center">
                 備考
               </td>
               {days.map((day) => {
@@ -277,10 +334,16 @@ const RosterTable: React.FC<RosterTableProps> = ({
                   <td 
                     key={`note-${dateStr}`}
                     onClick={() => canEdit && onDailyNoteClick(dateStr)}
-                    className={`border-b border-r border-gray-200 p-1 text-[10px] text-gray-600 align-top hover:bg-gray-200 cursor-pointer text-center whitespace-pre-wrap break-words w-16 min-h-[32px]`}
-                    title={note || ''}
+                    onMouseEnter={(e) => handleMouseEnter(e, 'note_row', day, dateStr, note)}
+                    onMouseLeave={handleMouseLeave}
+                    className={`border-b border-gray-300 border-r border-gray-200 p-1 text-[10px] text-gray-600 align-top hover:bg-gray-200 cursor-pointer text-center whitespace-pre-wrap break-words w-16 min-h-[32px]`}
                   >
-                    {note || (canEdit && <span className="opacity-0 hover:opacity-100 text-lg leading-none">+</span>)}
+                    {note && (
+                        <div className="line-clamp-3">
+                           {note}
+                        </div>
+                    )}
+                    {(!note && canEdit) && <span className="opacity-0 hover:opacity-100 text-lg leading-none">+</span>}
                   </td>
                 );
               })}
@@ -289,12 +352,13 @@ const RosterTable: React.FC<RosterTableProps> = ({
             {employees.map((emp) => {
               const holidayCount = countEmployeeHolidays(emp.id);
               const holidayDiff = holidayCount - requiredHolidayCount;
-              const rowBorderClass = emp.showDivider ? 'border-b-4 border-gray-400' : 'border-b border-gray-200';
+              // Strong horizontal line if divider is set, otherwise standard emphasized line
+              const rowBorderClass = emp.showDivider ? 'border-b-4 border-gray-800' : 'border-b border-gray-300';
               const nameBgClass = emp.backgroundColor || 'bg-white';
 
               return (
               <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
-                <td className={`sticky left-0 z-10 ${nameBgClass} border-r border-gray-300 p-2 font-medium text-gray-800 h-20 ${rowBorderClass}`}>
+                <td className={`sticky left-0 z-10 ${nameBgClass} border-r border-gray-200 p-2 font-medium text-gray-800 h-20 ${rowBorderClass}`}>
                   <div className="flex flex-col h-full justify-center relative">
                     <span>{emp.name}</span>
                     <span className="text-[10px] text-gray-500 font-normal">{emp.role}</span>
@@ -339,7 +403,9 @@ const RosterTable: React.FC<RosterTableProps> = ({
 
                   const selected = isCellSelected(emp.id, dateStr, day);
                   const selectedClass = selected ? 'ring-2 ring-indigo-500 bg-indigo-50 z-10' : '';
-                  const hasContent = activeShifts.length > 0;
+                  const hasContent = activeShifts.length > 0 || !!entry.note;
+                  // Overflow logic: >3 shifts, OR >2 shifts + note, OR note is long (>5 chars)
+                  const overflow = activeShifts.length > 3 || (activeShifts.length > 2 && entry.note) || (entry.note && entry.note.length > 5);
 
                   return (
                     <td
@@ -349,15 +415,17 @@ const RosterTable: React.FC<RosterTableProps> = ({
                       onDragOver={handleDragOver}
                       onDrop={(e) => handleDrop(e, emp.id, dateStr)}
                       onMouseDown={(e) => handleMouseDown(e, emp.id, day)}
-                      onMouseEnter={() => handleMouseEnter(emp.id, day)}
+                      onMouseEnter={(e) => handleMouseEnter(e, emp.id, day, dateStr)}
+                      onMouseLeave={handleMouseLeave}
                       onContextMenu={(e) => handleContextMenu(e, emp.id, dateStr)}
+                      onClick={() => handleCellClick(emp.id, dateStr)}
                       className={`border-r border-gray-200 p-1 text-center cursor-pointer relative h-20 w-16 align-top
                         ${canEdit ? 'hover:opacity-80' : ''} ${bgClass} ${selectedClass} ${rowBorderClass}
                         ${hasContent && canEdit ? 'cursor-grab active:cursor-grabbing' : ''}
                       `}
                     >
-                      <div className="flex flex-col gap-1 w-full h-full items-center pointer-events-none">
-                        {activeShifts.map((shift, idx) => {
+                      <div className="flex flex-col gap-1 w-full h-full items-center pointer-events-auto">
+                        {activeShifts.slice(0, 3).map((shift, idx) => {
                           if (shift.id === 'refresh') {
                             if (hasPrevRefresh && hasNextRefresh) {
                                 return <div key={idx} className="absolute inset-0 flex items-center justify-center opacity-50"><ArrowLeftRight className="text-teal-700 w-full h-8" strokeWidth={2.5}/></div>
@@ -371,30 +439,37 @@ const RosterTable: React.FC<RosterTableProps> = ({
                           }
                           
                           if (GRAY_OUT_SHIFTS.includes(shift.id)) {
-                             return <div key={idx} className="w-full py-2 flex items-center justify-center font-bold text-gray-700 text-lg" title={shift.name}>{shift.shortName}</div>
+                             return <div key={idx} className="w-full py-2 flex items-center justify-center font-bold text-gray-700 text-lg">{shift.shortName}</div>
                           }
                           
                           if (shift.id === 'business_trip') {
-                             return <div key={idx} title={`出張 ${entry.businessTrip?.destination || ''}`} className={`w-full rounded px-0.5 py-1 text-[10px] font-bold shadow-sm flex flex-row items-center justify-center gap-1 whitespace-nowrap overflow-hidden ${shift.color} ${shift.textColor}`}>
+                             return <div key={idx} className={`w-full rounded px-0.5 py-1 text-[10px] font-bold shadow-sm flex flex-row items-center justify-center gap-1 whitespace-nowrap overflow-hidden ${shift.color} ${shift.textColor}`}>
                                 <Briefcase size={12} className="shrink-0"/>
                                 <span className="truncate">{entry.businessTrip?.destination || '未入力'}</span>
                              </div>
                           }
 
                           if (shift.id === 'ma') {
-                             return <div key={idx} title={`MA ${entry.ma?.time} ${entry.ma?.content}`} className={`w-full rounded px-0.5 py-0.5 text-[10px] font-bold shadow-sm flex flex-col items-center justify-center leading-none gap-0.5 ${shift.color} ${shift.textColor}`}>
+                             return <div key={idx} className={`w-full rounded px-0.5 py-0.5 text-[10px] font-bold shadow-sm flex items-center justify-center gap-1 ${shift.color} ${shift.textColor}`}>
                                 <span>MA {entry.ma?.time || ''}</span>
-                                {entry.ma?.content && <span className="text-[9px] truncate w-full text-center">{entry.ma.content}</span>}
+                                <span className="text-[9px] truncate max-w-[40px]">{entry.ma?.content}</span>
                              </div>
                           }
 
-                          return <div key={idx} title={shift.name} className={`w-full rounded px-0.5 py-0.5 text-[10px] font-bold shadow-sm flex items-center justify-center truncate ${shift.color} ${shift.textColor}`}>{shift.shortName}</div>
+                          return <div key={idx} className={`w-full rounded px-0.5 py-0.5 text-[10px] font-bold shadow-sm flex items-center justify-center truncate ${shift.color} ${shift.textColor}`}>{shift.shortName}</div>
                         })}
                         
-                        {(entry.note) && (
-                           <div className="mt-auto w-full text-left bg-white border border-yellow-200 rounded px-1 py-0.5 relative z-10 group shadow-sm" title={entry.note}>
-                             <p className="text-[9px] text-gray-700 leading-tight line-clamp-2">{entry.note}</p>
+                        {(entry.note) && activeShifts.length < 3 && (
+                           <div className="mt-auto w-full text-left bg-white border border-yellow-200 rounded px-1 py-0.5 relative z-10 group shadow-sm">
+                             <p className="text-[9px] text-gray-700 leading-tight line-clamp-1">{entry.note}</p>
                            </div>
+                        )}
+
+                        {/* Overflow Indicator */}
+                        {overflow && (
+                            <div className="absolute bottom-0 right-0 bg-gray-600 text-white text-[9px] px-1 rounded-tl shadow z-20">
+                                +他
+                            </div>
                         )}
                       </div>
                     </td>
@@ -406,10 +481,16 @@ const RosterTable: React.FC<RosterTableProps> = ({
         </table>
       </div>
       {contextMenu && (
-        <div className="fixed bg-white shadow-xl rounded border border-gray-200 z-50 flex flex-col min-w-[140px]" style={{ left: contextMenu.x, top: contextMenu.y }}>
+        <div className="fixed bg-white shadow-xl rounded-lg border border-gray-200 z-50 flex flex-col min-w-[160px] py-1" style={{ left: contextMenu.x, top: contextMenu.y }}>
            <button onClick={() => { onOpenEditModal(); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm text-gray-700"><Edit size={14}/> 編集</button>
            <div className="border-t border-gray-100 my-1"></div>
-           <button onClick={() => { if (onCopySelected) onCopySelected(); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm text-gray-700"><Copy size={14}/> コピー</button>
+           
+           <div className="px-4 py-1 text-xs text-gray-400 font-bold">コピー</div>
+           <button onClick={() => { if (onCopySelected) onCopySelected('all'); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm text-gray-700 pl-6"><Layers size={14}/> 全て</button>
+           <button onClick={() => { if (onCopySelected) onCopySelected('shift'); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm text-gray-700 pl-6"><Clock size={14}/> シフトのみ</button>
+           <button onClick={() => { if (onCopySelected) onCopySelected('note'); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm text-gray-700 pl-6"><FileText size={14}/> 備考のみ</button>
+           
+           <div className="border-t border-gray-100 my-1"></div>
            <button onClick={() => { if (onPasteSelected) onPasteSelected(); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-sm text-gray-700"><ArrowRight size={14}/> 貼り付け</button>
            <div className="border-t border-gray-100 my-1"></div>
            <button onClick={() => { if (onDeleteSelected) onDeleteSelected(); setContextMenu(null); }} className="px-4 py-2 text-left hover:bg-red-50 flex items-center gap-2 text-sm text-red-600"><Trash2 size={14}/> 削除</button>

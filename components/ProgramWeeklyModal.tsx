@@ -1,13 +1,14 @@
+
 import React, { useState, useEffect } from 'react';
 import { Employee, ScheduleData } from '../types';
-import { X, Copy, CalendarRange } from 'lucide-react';
+import { X, Copy, CalendarRange, RefreshCw } from 'lucide-react';
 
 interface ProgramWeeklyModalProps {
   isOpen: boolean;
   onClose: () => void;
   employees: Employee[];
   schedule: ScheduleData;
-  currentDate: Date; // Use this to determine the week
+  currentDate: Date;
   type: 'asadre' | 'catch';
 }
 
@@ -20,36 +21,54 @@ const ProgramWeeklyModal: React.FC<ProgramWeeklyModalProps> = ({
   type
 }) => {
   const [reportText, setReportText] = useState('');
-  const [weekLabel, setWeekLabel] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
+  // Initialize dates when modal opens
   useEffect(() => {
     if (isOpen) {
+      const start = new Date(currentDate);
+      // Adjust to Monday
+      const day = start.getDay();
+      const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+      start.setDate(diff);
+      
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+
+      setStartDate(formatDate(start));
+      setEndDate(formatDate(end));
+    }
+  }, [isOpen, currentDate]);
+
+  // Regenerate report when dates or dependencies change
+  useEffect(() => {
+    if (isOpen && startDate && endDate) {
       generateReport();
     }
-  }, [isOpen, currentDate, schedule, type]);
+  }, [startDate, endDate, schedule, type, isOpen]);
+
+  const formatDate = (date: Date) => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
 
   const generateReport = () => {
-    // Determine the week range (Mon - Sun) containing currentDate
-    // Note: currentDate defaults to 1st of month in App, but user might be "looking" at a week.
-    // For simplicity, let's start from the currentDate (or finding the previous Monday).
-    
-    const startOfWeek = new Date(currentDate);
-    const day = startOfWeek.getDay(); 
-    // Adjust so 1 (Mon) is start. If 0 (Sun), go back 6 days.
-    const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1);
-    startOfWeek.setDate(diff);
+    if (!startDate || !endDate) return;
 
-    const weekDays = [];
-    for (let i = 0; i < 7; i++) {
-        const d = new Date(startOfWeek);
-        d.setDate(startOfWeek.getDate() + i);
-        weekDays.push(d);
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const days: Date[] = [];
+    
+    // Create array of dates in range
+    const curr = new Date(start);
+    while (curr <= end) {
+        days.push(new Date(curr));
+        curr.setDate(curr.getDate() + 1);
     }
 
-    const startStr = `${startOfWeek.getMonth()+1}/${startOfWeek.getDate()}`;
-    const endStr = `${weekDays[6].getMonth()+1}/${weekDays[6].getDate()}`;
-    setWeekLabel(`${startStr} 〜 ${endStr}`);
-
+    const startStr = `${start.getMonth()+1}/${start.getDate()}`;
+    const endStr = `${end.getMonth()+1}/${end.getDate()}`;
+    
     let text = `【${type === 'asadre' ? 'あさドレ♪' : 'キャッチ！'}週間予定】\n期間: ${startStr} 〜 ${endStr}\n\n`;
 
     const getNames = (dateStr: string, shiftId: string) => {
@@ -62,7 +81,7 @@ const ProgramWeeklyModal: React.FC<ProgramWeeklyModalProps> = ({
         .join('、');
     };
 
-    weekDays.forEach(date => {
+    days.forEach(date => {
         const y = date.getFullYear();
         const m = String(date.getMonth() + 1).padStart(2, '0');
         const d = String(date.getDate()).padStart(2, '0');
@@ -121,11 +140,36 @@ const ProgramWeeklyModal: React.FC<ProgramWeeklyModalProps> = ({
       <div className="bg-white rounded-xl shadow-2xl w-[600px] max-h-[80vh] flex flex-col">
         <div className="p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl flex justify-between items-center">
           <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-            <CalendarRange className="text-indigo-600" /> {type === 'asadre' ? 'あさドレ' : 'キャッチ'}週間抽出 ({weekLabel})
+            <CalendarRange className="text-indigo-600" /> {type === 'asadre' ? 'あさドレ' : 'キャッチ'}週間抽出
           </h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <X size={24} />
           </button>
+        </div>
+
+        <div className="p-4 bg-gray-50 border-b border-gray-200 flex items-center gap-4">
+            <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-gray-600">開始日</label>
+                <input 
+                    type="date" 
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="border border-gray-300 rounded px-2 py-1 text-sm"
+                />
+            </div>
+            <span className="text-gray-400">〜</span>
+            <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-gray-600">終了日</label>
+                <input 
+                    type="date" 
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="border border-gray-300 rounded px-2 py-1 text-sm"
+                />
+            </div>
+            <button onClick={generateReport} className="ml-auto p-2 bg-white border border-gray-300 rounded hover:bg-gray-100 text-gray-600" title="再生成">
+                <RefreshCw size={16} />
+            </button>
         </div>
 
         <div className="p-6 flex-1 flex flex-col">

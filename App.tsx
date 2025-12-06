@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, ScheduleData, Employee, ShiftType, DailyNotes, EmailConfig } from './types';
+import { User, ScheduleData, Employee, ShiftType, DailyNotes, EmailConfig, SelectedCell } from './types';
 import { INITIAL_EMPLOYEES, INITIAL_SCHEDULE, INITIAL_SHIFT_TYPES, REQUIRED_SHIFTS_BY_DAY } from './constants';
 import Auth from './components/Auth';
 import RosterTable from './components/RosterTable';
@@ -13,13 +13,16 @@ import AdminSettings from './components/AdminSettings';
 import { LogOut, MessageSquareText, Calendar, ChevronLeft, ChevronRight, AlertCircle, Printer, Mail, FileText, Settings } from 'lucide-react';
 import { AgentResponse } from './services/geminiService';
 
-export type SelectedCell = { empId: string, date: string };
+interface ClipboardData {
+    type: 'all' | 'shift' | 'note';
+    shiftIds?: string[];
+    ma?: any;
+    businessTrip?: any;
+    note?: string;
+}
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-
-  // --- State with LocalStorage Persistence ---
-  // ... (localStorage logic remains the same) ...
 
   const [schedule, setSchedule] = useState<ScheduleData>(() => {
     const saved = localStorage.getItem('roster_schedule');
@@ -91,7 +94,7 @@ const App: React.FC = () => {
   
   const [selectedCells, setSelectedCells] = useState<SelectedCell[]>([]);
   const [selectedDateForNote, setSelectedDateForNote] = useState<string | null>(null);
-  const [clipboard, setClipboard] = useState<{ shiftIds: string[], note?: string, ma?: any, businessTrip?: any } | null>(null);
+  const [clipboard, setClipboard] = useState<ClipboardData | null>(null);
 
   // Email Auto-Open Logic
   useEffect(() => {
@@ -114,7 +117,7 @@ const App: React.FC = () => {
       }
     };
 
-    const intervalId = setInterval(checkTime, 60000); // Check every minute
+    const intervalId = setInterval(checkTime, 60000); 
     return () => clearInterval(intervalId);
   }, [emailConfig, user]);
 
@@ -179,18 +182,6 @@ const App: React.FC = () => {
      });
   };
 
-  const handleCopyShift = (srcEmpId: string, srcDate: string, destEmpId: string, destDate: string) => {
-    setSchedule(prev => {
-       const newSchedule = { ...prev };
-       if (!newSchedule[srcDate]) newSchedule[srcDate] = {};
-       if (!newSchedule[destDate]) newSchedule[destDate] = {};
-       const srcData = newSchedule[srcDate][srcEmpId];
-       if (!srcData) return prev;
-       newSchedule[destDate][destEmpId] = { ...srcData };
-       return newSchedule;
-    });
- };
-
  const handleDeleteShift = (empId: string, date: string) => {
     setSchedule(prev => {
         const newSchedule = { ...prev };
@@ -213,11 +204,19 @@ const App: React.FC = () => {
     });
  };
 
- const handleCopySelected = () => {
+ const handleCopySelected = (mode: 'all' | 'shift' | 'note' = 'all') => {
      if (selectedCells.length === 0) return;
      const primary = selectedCells[0];
      const data = schedule[primary.date]?.[primary.empId];
-     if (data) setClipboard({ ...data });
+     if (data) {
+         setClipboard({
+             type: mode,
+             shiftIds: data.shiftIds,
+             ma: data.ma,
+             businessTrip: data.businessTrip,
+             note: data.note
+         });
+     }
  };
 
  const handlePasteSelected = () => {
@@ -226,13 +225,31 @@ const App: React.FC = () => {
         const newSchedule = { ...prev };
         selectedCells.forEach(cell => {
             if (!newSchedule[cell.date]) newSchedule[cell.date] = {};
-            newSchedule[cell.date][cell.empId] = { ...clipboard };
+            
+            const current = newSchedule[cell.date][cell.empId] || { shiftIds: [] };
+            let updated = { ...current };
+
+            if (clipboard.type === 'all') {
+                updated = {
+                    shiftIds: clipboard.shiftIds || [],
+                    ma: clipboard.ma,
+                    businessTrip: clipboard.businessTrip,
+                    note: clipboard.note
+                };
+            } else if (clipboard.type === 'shift') {
+                updated.shiftIds = clipboard.shiftIds || [],
+                updated.ma = clipboard.ma;
+                updated.businessTrip = clipboard.businessTrip;
+            } else if (clipboard.type === 'note') {
+                updated.note = clipboard.note;
+            }
+
+            newSchedule[cell.date][cell.empId] = updated;
         });
         return newSchedule;
     });
  };
 
-  // STRICT SECURITY: Authentication Check
   if (!user) {
     return <Auth onLogin={handleLogin} />;
   }
@@ -335,8 +352,6 @@ const App: React.FC = () => {
             onPrevMonth={handlePrevMonth}
             onNextMonth={handleNextMonth}
             onMoveShift={handleMoveShift}
-            onCopyShift={handleCopyShift}
-            onDeleteShift={handleDeleteShift}
             onDeleteSelected={handleDeleteSelected}
             onCopySelected={handleCopySelected}
             onPasteSelected={handlePasteSelected}
